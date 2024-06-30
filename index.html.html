@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auditoria de Contrato Inteligente</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #121212;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 1200px;
+            text-align: center;
+            background-color: #1f1f1f;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .header, .results, .controls {
+            margin-bottom: 20px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 200px;
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 5px;
+            border: none;
+            resize: none;
+            background-color: #2e2e2e;
+            color: #fff;
+        }
+
+        button {
+            background-color: #0066cc;
+            color: #fff;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        button:hover {
+            background-color: #005bb5;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .controls button {
+            flex: 1;
+            margin: 0 5px;
+        }
+
+        .boxes {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .box {
+            flex: 1;
+            margin: 0 10px;
+        }
+
+        .theme-toggle {
+            cursor: pointer;
+            margin-top: 20px;
+            padding: 5px;
+            background-color: #333;
+            border-radius: 5px;
+        }
+
+        .light-theme {
+            background-color: #f0f0f0;
+            color: #000;
+        }
+
+        .light-theme textarea {
+            background-color: #fff;
+            color: #000;
+        }
+
+        .light-theme .theme-toggle {
+            background-color: #ccc;
+        }
+
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+
+        .status.correct {
+            background-color: #4caf50;
+            color: white;
+        }
+
+        .status.incorrect {
+            background-color: #f44336;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Auditoria de Contrato Inteligente com Mythril</h1>
+            <div class="controls">
+                <button id="auditButton">Iniciar Auditoria</button>
+                <button id="viewResultsButton">Ver Resultados</button>
+            </div>
+        </div>
+        <div class="boxes">
+            <div class="box">
+                <textarea id="contractCode" placeholder="Cole o código do seu contrato inteligente aqui..."></textarea>
+            </div>
+            <div class="box">
+                <div id="results"></div>
+                <div id="status" class="status"></div>
+            </div>
+        </div>
+        <div class="theme-toggle" id="themeToggle">Alternar Tema Claro/Escuro</div>
+    </div>
+    <script>
+        let token = '';
+
+        async function login() {
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username: 'admin', password: 'password' })
+            });
+            const data = await response.json();
+            token = data.token;
+        }
+
+        async function analyzeContract(code) {
+            const response = await fetch('/analyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-access-token': token
+                },
+                body: JSON.stringify({ source: code })
+            });
+            return response.json();
+        }
+
+        async function checkStatus(jobId) {
+            const response = await fetch(`/status/${jobId}`, {
+                headers: { 'x-access-token': token }
+            });
+            return response.json();
+        }
+
+        document.getElementById('auditButton').addEventListener('click', async function() {
+            const contractCode = document.getElementById('contractCode').value;
+            const resultsDiv = document.getElementById('results');
+            const statusDiv = document.getElementById('status');
+
+            if (!contractCode) {
+                resultsDiv.innerHTML = '<p>Por favor, cole o código do contrato inteligente.</p>';
+                return;
+            }
+
+            resultsDiv.innerHTML = '<p>Analisando o contrato...</p>';
+            statusDiv.className = 'status';
+
+            const result = await analyzeContract(contractCode);
+            const jobId = result.jobId;
+
+            const interval = setInterval(async () => {
+                const status = await checkStatus(jobId);
+                if (status.state === 'completed') {
+                    clearInterval(interval);
+                    if (status.result.issues && status.result.issues.length > 0) {
+                        resultsDiv.innerHTML = '<h2>Vulnerabilidades Encontradas:</h2>';
+                        status.result.issues.forEach(issue => {
+                            resultsDiv.innerHTML += `<p>${issue.title}: ${issue.description}</p>`;
+                        });
+                        statusDiv.innerHTML = '<p>Contrato com Erros</p>';
+                        statusDiv.classList.add('incorrect');
+                    } else {
+                        resultsDiv.innerHTML = '<h2>Nenhuma vulnerabilidade encontrada. O contrato está seguro!</h2>';
+                        statusDiv.innerHTML = '<p>Contrato Correto</p>';
+                        statusDiv.classList.add('correct');
+                    }
+                } else if (status.state === 'failed') {
+                    clearInterval(interval);
+                    resultsDiv.innerHTML = '<p>Falha na análise do contrato.</p>';
+                    statusDiv.innerHTML = '<p>Falha na análise</p>';
+                    statusDiv.classList.add('incorrect');
+                }
+            }, 1000);
+        });
+
+        document.getElementById('viewResultsButton').addEventListener('click', function() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<p>Resultados anteriores...</p>'; // Adicione aqui lógica para mostrar resultados salvos ou pré-processados
+        });
+
+        document.getElementById('themeToggle').addEventListener('click', function() {
+            document.body.classList.toggle('light-theme');
+        });
+
+        // Login ao carregar a página
+        login();
+    </script>
+</body>
+</html>
